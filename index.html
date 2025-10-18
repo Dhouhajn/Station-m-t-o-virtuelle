@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Station Météo - Dashboard Local</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #f0f0f0;
+        }
+        .container {
+            margin-top: 50px;
+        }
+        .data-box {
+            display: inline-block;
+            margin: 20px;
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 { color: #333; }
+        canvas { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Station Météo Simulée</h1>
+        <div class="data-box">
+            <h2>Température</h2>
+            <p id="temperature">-- °C</p>
+        </div>
+        <div class="data-box">
+            <h2>Humidité</h2>
+            <p id="humidite">-- %</p>
+        </div>
+        <canvas id="dataChart" width="400" height="200"></canvas>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        // Configuration MQTT
+        const clientId = 'web_dashboard_' + Math.random().toString(16).slice(3);
+        const host = 'mqtt.eu.thingsboard.cloud'; // Secure WebSocket
+        const port = 1883; // WebSocket port
+        const accessToken = 'zyw06qf9q386k55b5etu'; // Your Access Token
+
+        // Initialize MQTT client
+        const client = new Paho.MQTT.Client(host, Number(port), '/mqtt', clientId);
+        client.onMessageArrived = onMessageArrived;
+        client.onConnectionLost = (response) => {
+            console.log('Connexion MQTT perdue : ', response.errorMessage);
+        };
+
+        // Connect to MQTT
+        client.connect({
+            userName: accessToken,
+            password:"",
+            // Password omitted (not needed for ThingsBoard)
+            onSuccess: () => {
+                console.log('Connecté à ThingsBoard');
+                client.subscribe('v1/devices/me/telemetry', (err) => {
+                    if (!err) {
+                        console.log('Abonné au topic v1/devices/me/telemetry');
+                    } else {
+                        console.log('Échec abonnement : ', err);
+                    }
+                });
+            },
+            onFailure: (err) => {
+                console.log('Échec connexion : ', err);
+                console.log('Vérifiez host: wss://mqtt.eu.thingsboard.cloud, port: 443, token: ', accessToken);
+            }
+        });
+
+        // Handle incoming messages
+        function onMessageArrived(message) {
+            console.log('Message reçu sur topic', message.destinationName, ': ', message.payloadString);
+            const data = JSON.parse(message.payloadString);
+            document.getElementById('temperature').innerText = (data.temperature || '--') + ' °C';
+            document.getElementById('humidite').innerText = (data.humidite || '--') + ' %';
+
+            // Temperature alert
+            if (data.temperature && data.temperature > 30) {
+                document.getElementById('temperature').style.color = 'red';
+                alert('Alerte : Température élevée ! ' + data.temperature + ' °C');
+            } else {
+                document.getElementById('temperature').style.color = 'black';
+            }
+
+            // Update chart
+            const now = new Date().toLocaleTimeString();
+            chartData.labels.push(now);
+            chartData.datasets[0].data.push(data.temperature || null);
+            chartData.datasets[1].data.push(data.humidite || null);
+            if (chartData.labels.length > 20) {
+                chartData.labels.shift();
+                chartData.datasets[0].data.shift();
+                chartData.datasets[1].data.shift();
+            }
+            chart.update();
+        }
+
+        // Chart.js configuration
+        const ctx = document.getElementById('dataChart').getContext('2d');
+        const chartData = {
+            labels: [],
+            datasets: [
+                {
+                    label: 'Température (°C)',
+                    data: [],
+                    borderColor: '#ff6384',
+                    fill: false
+                },
+                {
+                    label: 'Humidité (%)',
+                    data: [],
+                    borderColor: '#36a2eb',
+                    fill: false
+                }
+            ]
+        };
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: chartData,
+            options: {
+                responsive: true,
+                scales: {
+                    y: { beginAtZero: false }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
